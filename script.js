@@ -25,6 +25,9 @@ class FinancePulse {
         this.renderGoals();
         this.renderCategories();
         this.initCharts();
+        
+        // Автоматическая загрузка данных из облака при старте
+        this.initAutoSync();
     }
 
     getDefaultCategories() {
@@ -945,18 +948,40 @@ class FinancePulse {
     // Сохранение данных
     saveOperations() {
         localStorage.setItem('financePulse_operations', JSON.stringify(this.operations));
+        // Автоматическая синхронизация при изменении данных
+        this.debouncedCloudSync();
     }
 
     saveGoals() {
         localStorage.setItem('financePulse_goals', JSON.stringify(this.goals));
+        this.debouncedCloudSync();
     }
 
     saveCategories() {
         localStorage.setItem('financePulse_categories', JSON.stringify(this.categories));
+        this.debouncedCloudSync();
     }
 
     saveSettings() {
         localStorage.setItem('financePulse_settings', JSON.stringify(this.settings));
+        this.debouncedCloudSync();
+    }
+
+    // Отложенная синхронизация (не чаще раза в 2 секунды)
+    debouncedCloudSync() {
+        if (!this.cloudDataId) return;
+        
+        clearTimeout(this.syncTimeout);
+        this.syncTimeout = setTimeout(async () => {
+            try {
+                this.setSyncStatus('syncing', 'Сохранение...');
+                await this.saveToCloudSilent();
+                this.setSyncStatus('online', 'Синхронизировано');
+            } catch (error) {
+                this.setSyncStatus('offline', 'Ошибка сохранения');
+                console.error('Debounced sync error:', error);
+            }
+        }, 2000);
     }
 
     // Фильтрация операций
@@ -1166,6 +1191,9 @@ class FinancePulse {
                 localStorage.setItem('financePulse_cloudId', dataId);
                 document.getElementById('cloudDataId').value = dataId;
                 
+                // Запускаем автоматическую синхронизацию
+                this.startBackgroundSync();
+                
                 this.showSyncStatus(`Данные сохранены! ID: ${dataId}`, 'success');
             } else {
                 throw new Error('Ошибка сохранения');
@@ -1215,6 +1243,9 @@ class FinancePulse {
 
                 this.cloudDataId = dataId;
                 localStorage.setItem('financePulse_cloudId', dataId);
+                
+                // Запускаем автоматическую синхронизацию
+                this.startBackgroundSync();
                 
                 this.showSyncStatus('Данные успешно загружены из облака!', 'success');
             } else {
@@ -1307,6 +1338,174 @@ class FinancePulse {
         this.saveGoals();
         this.saveCategories();
         this.saveSettings();
+    }
+
+    // Автоматическая синхронизация
+    async initAutoSync() {
+        if (this.cloudDataId) {
+            // Загружаем данные из облака при старте
+            try {
+                this.setSyncStatus('syncing', 'Синхронизация...');
+                await this.loadFromCloudSilent();
+                this.setSyncStatus('online', 'Синхронизировано');
+                
+                // Запускаем периодическую синхронизацию
+                this.startBackgroundSync();
+            } catch (error) {
+                this.setSyncStatus('offline', 'Оффлайн');
+                console.error('Auto sync failed:', error);
+            }
+        } else {
+            this.setSyncStatus('offline', 'Локально');
+        }
+    }
+
+    startBackgroundSync() {
+        if (this.autoSyncInterval) {
+            clearInterval(this.autoSyncInterval);
+        }
+
+        this.autoSyncInterval = setInterval(async () => {
+            if (this.cloudDataId) {
+                try {
+                    this.setSyncStatus('syncing', 'Синхронизация...');
+                    
+                    // Загружаем данные из облака
+                    await this.loadFromCloudSilent();
+                    
+                    // Сохраняем актуальные данные
+                    await this.saveToCloudSilent();
+                    
+                    this.setSyncStatus('online', 'Синхронизировано');
+                } catch (error) {
+                    this.setSyncStatus('offline', 'Ошибка синхронизации');
+                    console.error('Background sync error:', error);
+                }
+            }
+        }, 10000); // Синхронизация каждые 10 секунд
+    }
+
+    setSyncStatus(status, text) {
+        const indicator = document.getElementById('syncIndicator');
+        const textEl = document.getElementById('syncText');
+        
+        indicator.className = `sync-indicator ${status}`;
+        textEl.textContent = text;
+    }
+
+    // Тихая загрузка из облака без уведомлений
+    async loadFromCloudSilent() {
+        if (!this.cloudDataId) return;
+
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${this.cloudDataId}/latest`, {
+            headers: {
+                'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
+            }
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            const cloudData = result.record;
+
+            // Проверяем, есть ли обновления
+            const cloudLastSync = new Date(cloudData.lastSync || 0);
+            const localLastSync = new Date(localStorage.getItem('financePulse_lastSync') || 0);
+
+            if (cloudLastSync > localLastSync) {
+                // Умное объединение данных
+                this.smartMergeData(cloudData);
+                localStorage.setItem('financePulse_lastSync', cloudData.lastSync);
+            }
+        } else {
+            throw new Error('Failed to load from cloud');
+        }
+    }
+
+    // Тихое сохранение в облако
+    async saveToCloudSilent() {
+        if (!this.cloudDataId) return;
+
+        const data = {
+            operations: this.operations,
+            goals: this.goals,
+            categories: this.categories,
+            settings: this.settings,
+            lastSync: new Date().toISOString()
+        };
+
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${this.cloudDataId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save to cloud');
+        }
+
+        localStorage.setItem('financePulse_lastSync', data.lastSync);
+    }
+
+    // Умное объединение данных (избегает потери локальных изменений)
+    smartMergeData(cloudData) {
+        let updated = false;
+
+        // Объединяем операции
+        const existingIds = new Set(this.operations.map(op => op.id));
+        const newOperations = cloudData.operations.filter(op => !existingIds.has(op.id));
+        
+        if (newOperations.length > 0) {
+            this.operations = [...this.operations, ...newOperations];
+            updated = true;
+        }
+
+        // Обновляем существующие операции если они были изменены
+        cloudData.operations.forEach(cloudOp => {
+            const localIndex = this.operations.findIndex(op => op.id === cloudOp.id);
+            if (localIndex !== -1) {
+                const localOp = this.operations[localIndex];
+                const cloudUpdated = new Date(cloudOp.updatedAt || cloudOp.timestamp);
+                const localUpdated = new Date(localOp.updatedAt || localOp.timestamp);
+                
+                if (cloudUpdated > localUpdated) {
+                    this.operations[localIndex] = cloudOp;
+                    updated = true;
+                }
+            }
+        });
+
+        // Аналогично для целей
+        const existingGoalIds = new Set(this.goals.map(goal => goal.id));
+        const newGoals = cloudData.goals.filter(goal => !existingGoalIds.has(goal.id));
+        
+        if (newGoals.length > 0) {
+            this.goals = [...this.goals, ...newGoals];
+            updated = true;
+        }
+
+        cloudData.goals.forEach(cloudGoal => {
+            const localIndex = this.goals.findIndex(goal => goal.id === cloudGoal.id);
+            if (localIndex !== -1) {
+                const localGoal = this.goals[localIndex];
+                const cloudUpdated = new Date(cloudGoal.updatedAt || cloudGoal.createdAt);
+                const localUpdated = new Date(localGoal.updatedAt || localGoal.createdAt);
+                
+                if (cloudUpdated > localUpdated) {
+                    this.goals[localIndex] = cloudGoal;
+                    updated = true;
+                }
+            }
+        });
+
+        if (updated) {
+            this.saveAllData();
+            this.updateDashboard();
+            this.renderOperationsTable();
+            this.renderGoals();
+        }
     }
 }
 

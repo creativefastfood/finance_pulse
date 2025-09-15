@@ -61,6 +61,37 @@ body {
     margin-right: 0.5rem;
 }
 
+.sync-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.sync-indicator #syncIcon {
+    font-size: 0.5rem;
+}
+
+.sync-indicator.offline #syncIcon {
+    color: #6b7280;
+}
+
+.sync-indicator.syncing #syncIcon {
+    color: #f59e0b;
+    animation: pulse 1.5s infinite;
+}
+
+.sync-indicator.online #syncIcon {
+    color: var(--success-color);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 .nav-menu {
     list-style: none;
     padding: 1rem 0;

@@ -9,6 +9,8 @@ class FinancePulse {
         
         this.charts = {};
         this.currentSection = 'dashboard';
+        this.cloudDataId = localStorage.getItem('financePulse_cloudId') || null;
+        this.autoSyncInterval = null;
         
         this.init();
     }
@@ -166,6 +168,23 @@ class FinancePulse {
             this.addCategory('expense');
         });
 
+        // Фильтрация
+        document.getElementById('applyFilters').addEventListener('click', () => {
+            this.applyFilters();
+        });
+
+        document.getElementById('clearFilters').addEventListener('click', () => {
+            this.clearFilters();
+        });
+
+        // Табы операций
+        const operationTabs = document.querySelectorAll('.tabs .tab-btn');
+        operationTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                this.switchOperationTab(tab.dataset.tab);
+            });
+        });
+
         // Экспорт данных
         document.getElementById('exportDataBtn').addEventListener('click', () => {
             this.exportData();
@@ -177,6 +196,24 @@ class FinancePulse {
                 this.clearData();
             }
         });
+
+        // Облачная синхронизация
+        document.getElementById('saveToCloudBtn').addEventListener('click', () => {
+            this.saveToCloud();
+        });
+
+        document.getElementById('loadFromCloudBtn').addEventListener('click', () => {
+            this.loadFromCloud();
+        });
+
+        document.getElementById('autoSyncBtn').addEventListener('click', () => {
+            this.toggleAutoSync();
+        });
+
+        // Загружаем ID облачного хранилища в поле
+        if (this.cloudDataId) {
+            document.getElementById('cloudDataId').value = this.cloudDataId;
+        }
     }
 
     // Обновление формы операции
@@ -244,6 +281,7 @@ class FinancePulse {
             subtype: formData.get('subtype'),
             amount: parseFloat(formData.get('amount')),
             category: formData.get('category'),
+            owner: formData.get('owner') || 'me',
             date: formData.get('date'),
             comment: formData.get('comment') || '',
             timestamp: new Date().toISOString()
@@ -286,6 +324,10 @@ class FinancePulse {
         // Обновляем UI
         document.getElementById('totalBalance').textContent = this.formatCurrency(totals.balance);
         document.getElementById('totalBalance').className = `balance-amount ${totals.balance >= 0 ? 'positive' : 'negative'}`;
+
+        // Разделение балансов по владельцам
+        document.getElementById('myBalance').textContent = this.formatCurrency(totals.myBalance);
+        document.getElementById('catBalance').textContent = this.formatCurrency(totals.catBalance);
 
         document.getElementById('totalIncome').textContent = this.formatCurrency(totals.totalIncome);
         document.getElementById('mainIncome').textContent = this.formatCurrency(totals.mainIncome);
@@ -341,10 +383,14 @@ class FinancePulse {
             personalExpenses: 0,
             businessExpenses: 0,
             balance: 0,
-            sideProfit: 0
+            sideProfit: 0,
+            myBalance: 0,
+            catBalance: 0
         };
 
         operations.forEach(op => {
+            const owner = op.owner || 'me'; // Для обратной совместимости
+            
             if (op.type === 'income') {
                 totals.totalIncome += op.amount;
                 if (op.subtype === 'main') {
@@ -352,12 +398,26 @@ class FinancePulse {
                 } else {
                     totals.sideIncome += op.amount;
                 }
+                
+                // Распределение по владельцам
+                if (owner === 'me') {
+                    totals.myBalance += op.amount;
+                } else {
+                    totals.catBalance += op.amount;
+                }
             } else {
                 totals.totalExpenses += op.amount;
                 if (op.subtype === 'personal') {
                     totals.personalExpenses += op.amount;
                 } else {
                     totals.businessExpenses += op.amount;
+                }
+                
+                // Распределение по владельцам
+                if (owner === 'me') {
+                    totals.myBalance -= op.amount;
+                } else {
+                    totals.catBalance -= op.amount;
                 }
             }
         });
@@ -420,19 +480,23 @@ class FinancePulse {
     }
 
     // Отрисовка таблицы операций
-    renderOperationsTable() {
+    renderOperationsTable(filteredOperations = null) {
         const tbody = document.getElementById('operationsTableBody');
         tbody.innerHTML = '';
 
-        this.operations.slice(0, 50).forEach(op => {
+        const operations = filteredOperations || this.operations;
+        operations.slice(0, 100).forEach(op => {
             const row = document.createElement('tr');
             row.className = op.type === 'income' ? 'income-row' : 'expense-row';
+            
+            const ownerLabel = (op.owner === 'cat') ? '🐱 Кошка' : '💰 Я';
             
             row.innerHTML = `
                 <td>${this.formatDate(op.date)}</td>
                 <td>${this.formatCurrency(op.amount)}</td>
                 <td>${op.category}</td>
                 <td>${this.getTypeLabel(op.type, op.subtype)}</td>
+                <td>${ownerLabel}</td>
                 <td>${op.comment}</td>
                 <td>
                     <button class="btn-small" onclick="app.editOperation(${op.id})">
@@ -466,9 +530,14 @@ class FinancePulse {
                     <div class="goal-progress-fill" style="width: ${progress}%"></div>
                 </div>
                 <p>${progress.toFixed(1)}% выполнено</p>
-                <button class="btn btn-danger" onclick="app.deleteGoal(${goal.id})">
-                    <i class="fas fa-trash"></i> Удалить
-                </button>
+                <div class="goal-actions">
+                    <button class="btn btn-secondary" onclick="app.editGoal(${goal.id})">
+                        <i class="fas fa-edit"></i> Редактировать
+                    </button>
+                    <button class="btn btn-danger" onclick="app.deleteGoal(${goal.id})">
+                        <i class="fas fa-trash"></i> Удалить
+                    </button>
+                </div>
             `;
             
             container.appendChild(card);
@@ -888,6 +957,356 @@ class FinancePulse {
 
     saveSettings() {
         localStorage.setItem('financePulse_settings', JSON.stringify(this.settings));
+    }
+
+    // Фильтрация операций
+    applyFilters() {
+        const dateFrom = document.getElementById('dateFrom').value;
+        const dateTo = document.getElementById('dateTo').value;
+        const category = document.getElementById('categoryFilter').value;
+        const owner = document.getElementById('ownerFilter').value;
+        const comment = document.getElementById('commentFilter').value.toLowerCase();
+
+        let filtered = this.operations.filter(op => {
+            // Фильтр по дате
+            if (dateFrom && op.date < dateFrom) return false;
+            if (dateTo && op.date > dateTo) return false;
+            
+            // Фильтр по категории
+            if (category && op.category !== category) return false;
+            
+            // Фильтр по владельцу
+            if (owner && (op.owner || 'me') !== owner) return false;
+            
+            // Фильтр по комментарию
+            if (comment && !op.comment.toLowerCase().includes(comment)) return false;
+
+            return true;
+        });
+
+        this.renderOperationsTable(filtered);
+    }
+
+    clearFilters() {
+        document.getElementById('dateFrom').value = '';
+        document.getElementById('dateTo').value = '';
+        document.getElementById('categoryFilter').value = '';
+        document.getElementById('ownerFilter').value = '';
+        document.getElementById('commentFilter').value = '';
+        this.renderOperationsTable();
+    }
+
+    // Переключение табов операций
+    switchOperationTab(tabType) {
+        const tabBtns = document.querySelectorAll('.tabs .tab-btn');
+        tabBtns.forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`[data-tab="${tabType}"]`).classList.add('active');
+
+        let filtered;
+        if (tabType === 'income') {
+            filtered = this.operations.filter(op => op.type === 'income');
+        } else if (tabType === 'expenses') {
+            filtered = this.operations.filter(op => op.type === 'expense');
+        } else {
+            filtered = this.operations;
+        }
+
+        this.renderOperationsTable(filtered);
+    }
+
+    // Редактирование операции
+    editOperation(id) {
+        const operation = this.operations.find(op => op.id === id);
+        if (!operation) return;
+
+        // Заполняем форму данными операции
+        document.querySelector(`input[name="type"][value="${operation.type}"]`).checked = true;
+        document.getElementById('amount').value = operation.amount;
+        document.getElementById('subtype').value = operation.subtype;
+        document.getElementById('owner').value = operation.owner || 'me';
+        document.getElementById('date').value = operation.date;
+        document.getElementById('comment').value = operation.comment;
+
+        // Обновляем форму
+        this.updateOperationForm();
+        
+        // Устанавливаем категорию после обновления опций
+        setTimeout(() => {
+            document.getElementById('category').value = operation.category;
+        }, 100);
+
+        // Меняем обработчик формы на редактирование
+        const form = document.getElementById('operationForm');
+        form.onsubmit = (e) => {
+            e.preventDefault();
+            this.updateOperation(id);
+        };
+
+        // Меняем заголовок модального окна
+        document.querySelector('#operationModal h3').textContent = 'Редактировать операцию';
+
+        this.openModal('operationModal');
+    }
+
+    updateOperation(id) {
+        const formData = new FormData(document.getElementById('operationForm'));
+        const operationIndex = this.operations.findIndex(op => op.id === id);
+        
+        if (operationIndex === -1) return;
+
+        // Обновляем операцию
+        this.operations[operationIndex] = {
+            ...this.operations[operationIndex],
+            type: formData.get('type'),
+            subtype: formData.get('subtype'),
+            amount: parseFloat(formData.get('amount')),
+            category: formData.get('category'),
+            owner: formData.get('owner') || 'me',
+            date: formData.get('date'),
+            comment: formData.get('comment') || '',
+            updatedAt: new Date().toISOString()
+        };
+
+        this.saveOperations();
+        this.updateDashboard();
+        this.renderOperationsTable();
+        this.closeModal('operationModal');
+
+        // Возвращаем обычный обработчик формы
+        const form = document.getElementById('operationForm');
+        form.onsubmit = (e) => {
+            e.preventDefault();
+            this.addOperation();
+        };
+        
+        // Возвращаем заголовок
+        document.querySelector('#operationModal h3').textContent = 'Добавить операцию';
+        
+        form.reset();
+    }
+
+    // Редактирование целей
+    editGoal(id) {
+        const goal = this.goals.find(g => g.id === id);
+        if (!goal) return;
+
+        document.getElementById('goalName').value = goal.name;
+        document.getElementById('goalAmount').value = goal.targetAmount;
+        document.getElementById('currentAmount').value = goal.currentAmount;
+
+        // Меняем обработчик формы
+        const form = document.getElementById('goalForm');
+        form.onsubmit = (e) => {
+            e.preventDefault();
+            this.updateGoal(id);
+        };
+
+        document.querySelector('#goalModal h3').textContent = 'Редактировать цель';
+        this.openModal('goalModal');
+    }
+
+    updateGoal(id) {
+        const formData = new FormData(document.getElementById('goalForm'));
+        const goalIndex = this.goals.findIndex(g => g.id === id);
+        
+        if (goalIndex === -1) return;
+
+        this.goals[goalIndex] = {
+            ...this.goals[goalIndex],
+            name: formData.get('goalName'),
+            targetAmount: parseFloat(formData.get('goalAmount')),
+            currentAmount: parseFloat(formData.get('currentAmount')),
+            updatedAt: new Date().toISOString()
+        };
+
+        this.saveGoals();
+        this.renderGoals();
+        this.closeModal('goalModal');
+
+        // Возвращаем обычный обработчик
+        const form = document.getElementById('goalForm');
+        form.onsubmit = (e) => {
+            e.preventDefault();
+            this.addGoal();
+        };
+
+        document.querySelector('#goalModal h3').textContent = 'Создать цель';
+        form.reset();
+    }
+
+    // Облачная синхронизация
+    async saveToCloud() {
+        try {
+            this.showSyncStatus('Сохранение данных в облаке...', 'info');
+            
+            const data = {
+                operations: this.operations,
+                goals: this.goals,
+                categories: this.categories,
+                settings: this.settings,
+                lastSync: new Date().toISOString()
+            };
+
+            // Используем простое бесплатное API для хранения данных
+            const response = await fetch('https://api.jsonbin.io/v3/b', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const dataId = result.metadata.id;
+                
+                // Сохраняем ID для доступа
+                this.cloudDataId = dataId;
+                localStorage.setItem('financePulse_cloudId', dataId);
+                document.getElementById('cloudDataId').value = dataId;
+                
+                this.showSyncStatus(`Данные сохранены! ID: ${dataId}`, 'success');
+            } else {
+                throw new Error('Ошибка сохранения');
+            }
+        } catch (error) {
+            this.showSyncStatus('Ошибка сохранения данных в облаке', 'error');
+            console.error('Cloud save error:', error);
+        }
+    }
+
+    async loadFromCloud() {
+        try {
+            const dataId = document.getElementById('cloudDataId').value.trim();
+            if (!dataId) {
+                this.showSyncStatus('Введите ID для загрузки данных', 'error');
+                return;
+            }
+
+            this.showSyncStatus('Загрузка данных из облака...', 'info');
+
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`, {
+                headers: {
+                    'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
+                }
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const cloudData = result.record;
+
+                // Проверяем, есть ли локальные данные
+                const hasLocalData = this.operations.length > 0 || this.goals.length > 0;
+                
+                if (hasLocalData) {
+                    const merge = confirm('У вас есть локальные данные. Объединить с облачными данными? (Отмена заменит все данные)');
+                    
+                    if (merge) {
+                        // Объединяем данные
+                        this.mergeCloudData(cloudData);
+                    } else {
+                        // Заменяем данные
+                        this.replaceWithCloudData(cloudData);
+                    }
+                } else {
+                    this.replaceWithCloudData(cloudData);
+                }
+
+                this.cloudDataId = dataId;
+                localStorage.setItem('financePulse_cloudId', dataId);
+                
+                this.showSyncStatus('Данные успешно загружены из облака!', 'success');
+            } else {
+                throw new Error('Данные не найдены');
+            }
+        } catch (error) {
+            this.showSyncStatus('Ошибка загрузки данных из облака', 'error');
+            console.error('Cloud load error:', error);
+        }
+    }
+
+    mergeCloudData(cloudData) {
+        // Объединяем операции (избегаем дубликатов по ID)
+        const existingIds = new Set(this.operations.map(op => op.id));
+        const newOperations = cloudData.operations.filter(op => !existingIds.has(op.id));
+        this.operations = [...this.operations, ...newOperations];
+
+        // Объединяем цели
+        const existingGoalIds = new Set(this.goals.map(goal => goal.id));
+        const newGoals = cloudData.goals.filter(goal => !existingGoalIds.has(goal.id));
+        this.goals = [...this.goals, ...newGoals];
+
+        // Объединяем категории
+        if (cloudData.categories) {
+            Object.keys(cloudData.categories).forEach(type => {
+                Object.keys(cloudData.categories[type]).forEach(subtype => {
+                    const cloudCategories = cloudData.categories[type][subtype];
+                    const localCategories = this.categories[type][subtype];
+                    this.categories[type][subtype] = [...new Set([...localCategories, ...cloudCategories])];
+                });
+            });
+        }
+
+        this.saveAllData();
+        this.updateDashboard();
+        this.renderOperationsTable();
+        this.renderGoals();
+        this.renderCategories();
+    }
+
+    replaceWithCloudData(cloudData) {
+        this.operations = cloudData.operations || [];
+        this.goals = cloudData.goals || [];
+        this.categories = cloudData.categories || this.getDefaultCategories();
+        this.settings = cloudData.settings || this.getDefaultSettings();
+
+        this.saveAllData();
+        this.updateDashboard();
+        this.renderOperationsTable();
+        this.renderGoals();
+        this.renderCategories();
+    }
+
+    toggleAutoSync() {
+        if (this.autoSyncInterval) {
+            // Отключаем автосинхронизацию
+            clearInterval(this.autoSyncInterval);
+            this.autoSyncInterval = null;
+            document.getElementById('autoSyncBtn').textContent = 'Включить автосинхронизацию';
+            this.showSyncStatus('Автосинхронизация отключена', 'info');
+        } else {
+            // Включаем автосинхронизацию
+            if (!this.cloudDataId) {
+                this.showSyncStatus('Сначала сохраните данные в облаке', 'error');
+                return;
+            }
+
+            this.autoSyncInterval = setInterval(() => {
+                this.saveToCloud();
+            }, 30000); // Синхронизация каждые 30 секунд
+
+            document.getElementById('autoSyncBtn').textContent = 'Отключить автосинхронизацию';
+            this.showSyncStatus('Автосинхронизация включена (каждые 30 сек)', 'success');
+        }
+    }
+
+    showSyncStatus(message, type) {
+        const statusEl = document.getElementById('syncStatus');
+        statusEl.className = `sync-status ${type}`;
+        statusEl.textContent = message;
+        
+        // Автоматически скрываем через 5 секунд
+        setTimeout(() => {
+            statusEl.className = 'sync-status';
+        }, 5000);
+    }
+
+    saveAllData() {
+        this.saveOperations();
+        this.saveGoals();
+        this.saveCategories();
+        this.saveSettings();
     }
 }
 

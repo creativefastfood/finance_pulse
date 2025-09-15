@@ -59,6 +59,16 @@
                     <div class="card balance-card">
                         <h3>Общий баланс</h3>
                         <div class="balance-amount" id="totalBalance">+0 ₽</div>
+                        <div class="balance-breakdown">
+                            <div class="balance-item">
+                                <span class="balance-label">💰 Мой баланс:</span>
+                                <span class="balance-value" id="myBalance">0 ₽</span>
+                            </div>
+                            <div class="balance-item">
+                                <span class="balance-label">🐱 Баланс Кошки:</span>
+                                <span class="balance-value" id="catBalance">0 ₽</span>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="card income-card">
@@ -101,7 +111,8 @@
                 </header>
                 
                 <div class="tabs">
-                    <button class="tab-btn active" data-tab="income">Доходы</button>
+                    <button class="tab-btn active" data-tab="all">Все</button>
+                    <button class="tab-btn" data-tab="income">Доходы</button>
                     <button class="tab-btn" data-tab="expenses">Расходы</button>
                 </div>
                 
@@ -111,7 +122,14 @@
                     <select id="categoryFilter">
                         <option value="">Все категории</option>
                     </select>
+                    <select id="ownerFilter">
+                        <option value="">Все владельцы</option>
+                        <option value="me">Я</option>
+                        <option value="cat">Кошка</option>
+                    </select>
+                    <input type="text" id="commentFilter" placeholder="Поиск в комментариях">
                     <button class="btn btn-secondary" id="applyFilters">Применить</button>
+                    <button class="btn btn-secondary" id="clearFilters">Очистить</button>
                 </div>
                 
                 <div class="operations-table">
@@ -122,6 +140,7 @@
                                 <th>Сумма</th>
                                 <th>Категория</th>
                                 <th>Тип</th>
+                                <th>Владелец</th>
                                 <th>Комментарий</th>
                                 <th>Действия</th>
                             </tr>
@@ -231,6 +250,24 @@
                     </div>
                     
                     <div id="data-tab" class="tab-content">
+                        <div class="cloud-sync-section">
+                            <h4>Совместный доступ к данным</h4>
+                            <p>Поделитесь своими данными с другими пользователями</p>
+                            <div class="form-group">
+                                <label for="cloudDataId">ID для совместного доступа:</label>
+                                <input type="text" id="cloudDataId" placeholder="Введите ID или оставьте пустым для создания нового">
+                            </div>
+                            <div class="sync-actions">
+                                <button class="btn btn-primary" id="saveToCloudBtn">Сохранить в облаке</button>
+                                <button class="btn btn-secondary" id="loadFromCloudBtn">Загрузить из облака</button>
+                                <button class="btn btn-secondary" id="autoSyncBtn">Включить автосинхронизацию</button>
+                            </div>
+                            <div id="syncStatus" class="sync-status"></div>
+                        </div>
+                        
+                        <hr style="margin: 2rem 0;">
+                        
+                        <h4>Резервное копирование</h4>
                         <button class="btn btn-secondary" id="exportDataBtn">Экспорт данных</button>
                         <button class="btn btn-danger" id="clearDataBtn">Очистить все данные</button>
                     </div>
@@ -266,6 +303,14 @@
                     <select id="subtype" name="subtype" required>
                         <option value="main">Основной</option>
                         <option value="side">Сторонний</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="owner">Владелец</label>
+                    <select id="owner" name="owner" required>
+                        <option value="me">Я</option>
+                        <option value="cat">Кошка</option>
                     </select>
                 </div>
                 

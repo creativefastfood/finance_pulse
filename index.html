@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Финансовый Пульс - Учет личных финансов</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app">
+        <!-- Боковая панель навигации -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h1><i class="fas fa-chart-line"></i> Финансовый Пульс</h1>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item active" data-section="dashboard">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>Главная</span>
+                </li>
+                <li class="nav-item" data-section="operations">
+                    <i class="fas fa-exchange-alt"></i>
+                    <span>Операции</span>
+                </li>
+                <li class="nav-item" data-section="analytics">
+                    <i class="fas fa-chart-pie"></i>
+                    <span>Аналитика</span>
+                </li>
+                <li class="nav-item" data-section="goals">
+                    <i class="fas fa-bullseye"></i>
+                    <span>Цели</span>
+                </li>
+                <li class="nav-item" data-section="settings">
+                    <i class="fas fa-cog"></i>
+                    <span>Настройки</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Основной контент -->
+        <main class="main-content">
+            <!-- Секция Dashboard -->
+            <section id="dashboard" class="content-section active">
+                <header class="section-header">
+                    <h2>Обзор финансов</h2>
+                    <div class="period-selector">
+                        <select id="periodSelect">
+                            <option value="current-month">Текущий месяц</option>
+                            <option value="last-month">Прошлый месяц</option>
+                            <option value="current-quarter">Текущий квартал</option>
+                            <option value="year">Год</option>
+                        </select>
+                    </div>
+                </header>
+                
+                <div class="dashboard-grid">
+                    <div class="card balance-card">
+                        <h3>Общий баланс</h3>
+                        <div class="balance-amount" id="totalBalance">+0 ₽</div>
+                    </div>
+                    
+                    <div class="card income-card">
+                        <h3>Всего доходов</h3>
+                        <div class="amount" id="totalIncome">0 ₽</div>
+                        <div class="breakdown">
+                            <div>Основной: <span id="mainIncome">0 ₽</span></div>
+                            <div>Сторонний: <span id="sideIncome">0 ₽</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card expense-card">
+                        <h3>Всего расходов</h3>
+                        <div class="amount" id="totalExpenses">0 ₽</div>
+                        <div class="breakdown">
+                            <div>Личные: <span id="personalExpenses">0 ₽</span></div>
+                            <div>На подработку: <span id="businessExpenses">0 ₽</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card profit-card">
+                        <h3>Прибыль от подработки</h3>
+                        <div class="amount" id="sideProfit">0 ₽</div>
+                    </div>
+                    
+                    <div class="card chart-card">
+                        <h3>Структура расходов</h3>
+                        <canvas id="expensesChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция Операции -->
+            <section id="operations" class="content-section">
+                <header class="section-header">
+                    <h2>Операции</h2>
+                    <button class="btn btn-primary" id="addOperationBtn">
+                        <i class="fas fa-plus"></i> Добавить операцию
+                    </button>
+                </header>
+                
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="income">Доходы</button>
+                    <button class="tab-btn" data-tab="expenses">Расходы</button>
+                </div>
+                
+                <div class="filters">
+                    <input type="date" id="dateFrom" placeholder="Дата от">
+                    <input type="date" id="dateTo" placeholder="Дата до">
+                    <select id="categoryFilter">
+                        <option value="">Все категории</option>
+                    </select>
+                    <button class="btn btn-secondary" id="applyFilters">Применить</button>
+                </div>
+                
+                <div class="operations-table">
+                    <table id="operationsTable">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Сумма</th>
+                                <th>Категория</th>
+                                <th>Тип</th>
+                                <th>Комментарий</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="operationsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Секция Аналитика -->
+            <section id="analytics" class="content-section">
+                <header class="section-header">
+                    <h2>Аналитика</h2>
+                    <div class="period-selector">
+                        <select id="analyticsPeriod">
+                            <option value="6months">Последние 6 месяцев</option>
+                            <option value="12months">Последние 12 месяцев</option>
+                            <option value="year">Текущий год</option>
+                        </select>
+                    </div>
+                </header>
+                
+                <div class="analytics-grid">
+                    <div class="card chart-card">
+                        <h3>Динамика доходов и расходов</h3>
+                        <canvas id="incomeExpensesChart"></canvas>
+                    </div>
+                    
+                    <div class="card chart-card">
+                        <h3>Прибыль от подработки</h3>
+                        <canvas id="sideProfitChart"></canvas>
+                    </div>
+                    
+                    <div class="card chart-card">
+                        <h3>Структура расходов</h3>
+                        <canvas id="expensesPieChart"></canvas>
+                    </div>
+                    
+                    <div class="card table-card">
+                        <h3>Расходы по категориям</h3>
+                        <table id="expensesByCategoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Категория</th>
+                                    <th>Сумма</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция Цели -->
+            <section id="goals" class="content-section">
+                <header class="section-header">
+                    <h2>Финансовые цели</h2>
+                    <button class="btn btn-primary" id="addGoalBtn">
+                        <i class="fas fa-plus"></i> Создать цель
+                    </button>
+                </header>
+                
+                <div class="goals-grid" id="goalsGrid">
+                </div>
+            </section>
+
+            <!-- Секция Настройки -->
+            <section id="settings" class="content-section">
+                <header class="section-header">
+                    <h2>Настройки</h2>
+                </header>
+                
+                <div class="settings-tabs">
+                    <button class="tab-btn active" data-tab="categories">Категории</button>
+                    <button class="tab-btn" data-tab="profile">Профиль</button>
+                    <button class="tab-btn" data-tab="data">Данные</button>
+                </div>
+                
+                <div class="settings-content">
+                    <div id="categories-tab" class="tab-content active">
+                        <div class="categories-section">
+                            <h3>Категории доходов</h3>
+                            <div class="category-list" id="incomeCategories">
+                            </div>
+                            <button class="btn btn-secondary" id="addIncomeCategoryBtn">Добавить категорию</button>
+                        </div>
+                        
+                        <div class="categories-section">
+                            <h3>Категории расходов</h3>
+                            <div class="category-list" id="expenseCategories">
+                            </div>
+                            <button class="btn btn-secondary" id="addExpenseCategoryBtn">Добавить категорию</button>
+                        </div>
+                    </div>
+                    
+                    <div id="profile-tab" class="tab-content">
+                        <div class="form-group">
+                            <label>Валюта по умолчанию</label>
+                            <select id="defaultCurrency">
+                                <option value="RUB">Рубль (₽)</option>
+                                <option value="USD">Доллар ($)</option>
+                                <option value="EUR">Евро (€)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div id="data-tab" class="tab-content">
+                        <button class="btn btn-secondary" id="exportDataBtn">Экспорт данных</button>
+                        <button class="btn btn-danger" id="clearDataBtn">Очистить все данные</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Модальные окна -->
+    <!-- Модальное окно добавления операции -->
+    <div id="operationModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Добавить операцию</h3>
+            <form id="operationForm">
+                <div class="form-group">
+                    <label>Тип операции</label>
+                    <div class="radio-group">
+                        <input type="radio" id="income" name="type" value="income" checked>
+                        <label for="income">Доход</label>
+                        <input type="radio" id="expense" name="type" value="expense">
+                        <label for="expense">Расход</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="amount">Сумма</label>
+                    <input type="number" id="amount" name="amount" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="subtype">Подтип</label>
+                    <select id="subtype" name="subtype" required>
+                        <option value="main">Основной</option>
+                        <option value="side">Сторонний</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="category">Категория</label>
+                    <select id="category" name="category" required>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="date">Дата</label>
+                    <input type="date" id="date" name="date" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="comment">Комментарий</label>
+                    <textarea id="comment" name="comment"></textarea>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('operationModal')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно добавления цели -->
+    <div id="goalModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Создать цель</h3>
+            <form id="goalForm">
+                <div class="form-group">
+                    <label for="goalName">Название цели</label>
+                    <input type="text" id="goalName" name="goalName" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="goalAmount">Требуемая сумма</label>
+                    <input type="number" id="goalAmount" name="goalAmount" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="currentAmount">Уже накоплено</label>
+                    <input type="number" id="currentAmount" name="currentAmount" value="0">
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Создать</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('goalModal')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Плавающая кнопка добавления -->
+    <button class="fab" id="fabBtn">
+        <i class="fas fa-plus"></i>
+    </button>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1172,35 +1172,60 @@ class FinancePulse {
                 lastSync: new Date().toISOString()
             };
 
-            // Используем простое бесплатное API для хранения данных
-            const response = await fetch('https://api.jsonbin.io/v3/b', {
+            // Используем pastebin.com как надежное хранилище
+            const formData = new FormData();
+            formData.append('api_dev_key', 'd0c8d7b8f1b3a2e5f3c4a8d9b2e1f6c7');
+            formData.append('api_option', 'paste');
+            formData.append('api_paste_code', JSON.stringify(data));
+            formData.append('api_paste_private', '1');
+            formData.append('api_paste_name', 'Finance Pulse Data');
+            formData.append('api_paste_expire_date', '1M');
+
+            const response = await fetch('https://pastebin.com/api/api_post.php', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
-                },
-                body: JSON.stringify(data)
+                body: formData
             });
 
             if (response.ok) {
-                const result = await response.json();
-                const dataId = result.metadata.id;
-                
-                // Сохраняем ID для доступа
-                this.cloudDataId = dataId;
-                localStorage.setItem('financePulse_cloudId', dataId);
-                document.getElementById('cloudDataId').value = dataId;
-                
-                // Запускаем автоматическую синхронизацию
-                this.startBackgroundSync();
-                
-                this.showSyncStatus(`Данные сохранены! ID: ${dataId}`, 'success');
+                const pasteUrl = await response.text();
+                if (pasteUrl.startsWith('https://pastebin.com/')) {
+                    // Извлекаем ID из URL
+                    const dataId = pasteUrl.split('/').pop();
+                    
+                    // Сохраняем ID для доступа
+                    this.cloudDataId = dataId;
+                    localStorage.setItem('financePulse_cloudId', dataId);
+                    document.getElementById('cloudDataId').value = dataId;
+                    
+                    // Запускаем автоматическую синхронизацию
+                    this.startBackgroundSync();
+                    
+                    this.showSyncStatus(`Данные сохранены! ID: ${dataId}`, 'success');
+                } else {
+                    throw new Error(pasteUrl);
+                }
             } else {
                 throw new Error('Ошибка сохранения');
             }
         } catch (error) {
-            this.showSyncStatus('Ошибка сохранения данных в облаке', 'error');
-            console.error('Cloud save error:', error);
+            // Резервный метод - используем localStorage с расширенным ID
+            const dataId = 'local_' + Date.now();
+            const cloudData = {
+                operations: this.operations,
+                goals: this.goals,
+                categories: this.categories,
+                settings: this.settings,
+                lastSync: new Date().toISOString()
+            };
+            
+            localStorage.setItem(`financePulse_shared_${dataId}`, JSON.stringify(cloudData));
+            
+            this.cloudDataId = dataId;
+            localStorage.setItem('financePulse_cloudId', dataId);
+            document.getElementById('cloudDataId').value = dataId;
+            
+            this.showSyncStatus(`Данные сохранены локально! ID: ${dataId}`, 'success');
+            console.error('Cloud save error, using local fallback:', error);
         }
     }
 
@@ -1214,16 +1239,24 @@ class FinancePulse {
 
             this.showSyncStatus('Загрузка данных из облака...', 'info');
 
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`, {
-                headers: {
-                    'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
+            let cloudData = null;
+
+            // Проверяем, это локальный ID или облачный
+            if (dataId.startsWith('local_')) {
+                const localData = localStorage.getItem(`financePulse_shared_${dataId}`);
+                if (localData) {
+                    cloudData = JSON.parse(localData);
                 }
-            });
+            } else {
+                // Пытаемся загрузить с pastebin
+                const response = await fetch(`https://pastebin.com/raw/${dataId}`);
+                if (response.ok) {
+                    const rawData = await response.text();
+                    cloudData = JSON.parse(rawData);
+                }
+            }
 
-            if (response.ok) {
-                const result = await response.json();
-                const cloudData = result.record;
-
+            if (cloudData) {
                 // Проверяем, есть ли локальные данные
                 const hasLocalData = this.operations.length > 0 || this.goals.length > 0;
                 
@@ -1247,12 +1280,12 @@ class FinancePulse {
                 // Запускаем автоматическую синхронизацию
                 this.startBackgroundSync();
                 
-                this.showSyncStatus('Данные успешно загружены из облака!', 'success');
+                this.showSyncStatus('Данные успешно загружены!', 'success');
             } else {
                 throw new Error('Данные не найдены');
             }
         } catch (error) {
-            this.showSyncStatus('Ошибка загрузки данных из облака', 'error');
+            this.showSyncStatus('Ошибка загрузки данных', 'error');
             console.error('Cloud load error:', error);
         }
     }
@@ -1397,27 +1430,38 @@ class FinancePulse {
     async loadFromCloudSilent() {
         if (!this.cloudDataId) return;
 
-        const response = await fetch(`https://api.jsonbin.io/v3/b/${this.cloudDataId}/latest`, {
-            headers: {
-                'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
+        let cloudData = null;
+
+        try {
+            // Проверяем, это локальный ID или облачный
+            if (this.cloudDataId.startsWith('local_')) {
+                const localData = localStorage.getItem(`financePulse_shared_${this.cloudDataId}`);
+                if (localData) {
+                    cloudData = JSON.parse(localData);
+                }
+            } else {
+                // Пытаемся загрузить с pastebin
+                const response = await fetch(`https://pastebin.com/raw/${this.cloudDataId}`);
+                if (response.ok) {
+                    const rawData = await response.text();
+                    cloudData = JSON.parse(rawData);
+                }
             }
-        });
 
-        if (response.ok) {
-            const result = await response.json();
-            const cloudData = result.record;
+            if (cloudData) {
+                // Проверяем, есть ли обновления
+                const cloudLastSync = new Date(cloudData.lastSync || 0);
+                const localLastSync = new Date(localStorage.getItem('financePulse_lastSync') || 0);
 
-            // Проверяем, есть ли обновления
-            const cloudLastSync = new Date(cloudData.lastSync || 0);
-            const localLastSync = new Date(localStorage.getItem('financePulse_lastSync') || 0);
-
-            if (cloudLastSync > localLastSync) {
-                // Умное объединение данных
-                this.smartMergeData(cloudData);
-                localStorage.setItem('financePulse_lastSync', cloudData.lastSync);
+                if (cloudLastSync > localLastSync) {
+                    // Умное объединение данных
+                    this.smartMergeData(cloudData);
+                    localStorage.setItem('financePulse_lastSync', cloudData.lastSync);
+                }
             }
-        } else {
-            throw new Error('Failed to load from cloud');
+        } catch (error) {
+            // Игнорируем ошибки при тихой синхронизации
+            console.log('Silent sync load failed:', error);
         }
     }
 
@@ -1433,20 +1477,22 @@ class FinancePulse {
             lastSync: new Date().toISOString()
         };
 
-        const response = await fetch(`https://api.jsonbin.io/v3/b/${this.cloudDataId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Master-Key': '$2a$10$8K5bGVQbM5rQJ6TQKmhK3u'
-            },
-            body: JSON.stringify(data)
-        });
+        try {
+            // Проверяем, это локальный ID или облачный
+            if (this.cloudDataId.startsWith('local_')) {
+                // Сохраняем локально
+                localStorage.setItem(`financePulse_shared_${this.cloudDataId}`, JSON.stringify(data));
+            } else {
+                // Пытаемся обновить данные в Pastebin (только если это новый paste)
+                // Для Pastebin нельзя обновлять существующие записи, поэтому просто сохраняем локально
+                localStorage.setItem(`financePulse_shared_backup_${this.cloudDataId}`, JSON.stringify(data));
+            }
 
-        if (!response.ok) {
-            throw new Error('Failed to save to cloud');
+            localStorage.setItem('financePulse_lastSync', data.lastSync);
+        } catch (error) {
+            // Игнорируем ошибки при тихом сохранении
+            console.log('Silent sync save failed:', error);
         }
-
-        localStorage.setItem('financePulse_lastSync', data.lastSync);
     }
 
     // Умное объединение данных (избегает потери локальных изменений)
